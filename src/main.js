@@ -304,6 +304,11 @@ let selectedDistrict = districts[0];
 let hoveredDistrict = null;
 let autoRotate = true;
 
+// 用于区分点击和拖拽的变量
+let pointerDownPosition = { x: 0, y: 0 };
+let isDragging = false;
+const CLICK_THRESHOLD = 5; // 像素阈值，超过此值视为拖拽
+
 function getFilteredDistricts() {
   return activeFilter === "all"
     ? districts
@@ -432,6 +437,15 @@ function applyFilter(nextFilter) {
     entry.root.visible = visible;
   });
 
+  // 如果当前选中的节点被筛选掉了，清空选中状态
+  if (selectedDistrict) {
+    const isSelectedVisible = nextFilter === "all" || selectedDistrict.status === nextFilter;
+    if (!isSelectedVisible) {
+      selectedDistrict = null;
+      renderDetails();
+    }
+  }
+
   renderMetrics();
   renderEvents();
   refreshSelectionVisuals();
@@ -474,7 +488,22 @@ function handlePointerMove(event) {
   tooltipEl.classList.remove("visible");
 }
 
+function handlePointerDown(event) {
+  pointerDownPosition.x = event.clientX;
+  pointerDownPosition.y = event.clientY;
+  isDragging = false;
+}
+
 function handlePointerUp(event) {
+  const dx = event.clientX - pointerDownPosition.x;
+  const dy = event.clientY - pointerDownPosition.y;
+  const distance = Math.sqrt(dx * dx + dy * dy);
+
+  // 如果移动距离超过阈值，视为拖拽，不触发点击
+  if (distance > CLICK_THRESHOLD) {
+    return;
+  }
+
   updatePointerFromEvent(event);
   raycaster.setFromCamera(pointer, camera);
 
@@ -497,10 +526,12 @@ function resetCamera() {
 
 function onResize() {
   camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
 }
 
 renderer.domElement.addEventListener("pointermove", handlePointerMove);
+renderer.domElement.addEventListener("pointerdown", handlePointerDown);
 renderer.domElement.addEventListener("pointerup", handlePointerUp);
 
 filtersEl.addEventListener("click", (event) => {
@@ -531,13 +562,15 @@ applyFilter("all");
 
 function animate() {
   const elapsed = clock.getElapsedTime();
+  const delta = clock.getDelta();
 
   districtEntries.forEach((entry, index) => {
     entry.tower.position.y = entry.baseHeight / 2 + Math.sin(elapsed * 1.8 + index) * 0.18;
     entry.cap.position.y = entry.baseHeight + 0.32 + Math.sin(elapsed * 1.8 + index) * 0.18;
     const haloScale = 0.92 + (Math.sin(elapsed * 2.4 + index * 0.6) + 1) * 0.08;
     entry.halo.scale.setScalar(haloScale);
-    entry.root.rotation.y += elapsed * 0.0008 * entry.spinFactor;
+    // 使用固定时间步长代替累计时间，避免动画失真
+    entry.root.rotation.y += 0.008 * entry.spinFactor;
   });
 
   droneGroup.children.forEach((drone) => {
