@@ -303,6 +303,8 @@ let activeFilter = "all";
 let selectedDistrict = districts[0];
 let hoveredDistrict = null;
 let autoRotate = true;
+let pointerDownPosition = null;
+const CLICK_THRESHOLD = 5;
 
 function getFilteredDistricts() {
   return activeFilter === "all"
@@ -432,13 +434,28 @@ function applyFilter(nextFilter) {
     entry.root.visible = visible;
   });
 
+  if (selectedDistrict) {
+    const isSelectedVisible =
+      nextFilter === "all" || selectedDistrict.status === nextFilter;
+    if (!isSelectedVisible) {
+      selectedDistrict = null;
+    }
+  }
+
   renderMetrics();
+  renderDetails();
   renderEvents();
   refreshSelectionVisuals();
 }
 
 function selectDistrictById(districtId) {
-  selectedDistrict = districts.find((district) => district.id === districtId) || null;
+  const district = districts.find((d) => d.id === districtId);
+  if (!district) {
+    selectedDistrict = null;
+  } else {
+    const isVisible = activeFilter === "all" || district.status === activeFilter;
+    selectedDistrict = isVisible ? district : null;
+  }
   renderDetails();
   refreshSelectionVisuals();
 }
@@ -453,7 +470,12 @@ function handlePointerMove(event) {
   updatePointerFromEvent(event);
   raycaster.setFromCamera(pointer, camera);
 
-  const intersections = raycaster.intersectObjects(pickTargets, false);
+  const visibleTargets = pickTargets.filter((target) => {
+    const entry = districtEntries.find((e) => e.tower === target);
+    return entry && entry.root.visible;
+  });
+
+  const intersections = raycaster.intersectObjects(visibleTargets, false);
 
   if (intersections.length > 0) {
     const districtId = intersections[0].object.userData.districtId;
@@ -474,11 +496,33 @@ function handlePointerMove(event) {
   tooltipEl.classList.remove("visible");
 }
 
+function handlePointerDown(event) {
+  pointerDownPosition = { x: event.clientX, y: event.clientY };
+}
+
 function handlePointerUp(event) {
+  if (!pointerDownPosition) {
+    return;
+  }
+
+  const dx = event.clientX - pointerDownPosition.x;
+  const dy = event.clientY - pointerDownPosition.y;
+  const distance = Math.sqrt(dx * dx + dy * dy);
+  pointerDownPosition = null;
+
+  if (distance > CLICK_THRESHOLD) {
+    return;
+  }
+
   updatePointerFromEvent(event);
   raycaster.setFromCamera(pointer, camera);
 
-  const intersections = raycaster.intersectObjects(pickTargets, false);
+  const visibleTargets = pickTargets.filter((target) => {
+    const entry = districtEntries.find((e) => e.tower === target);
+    return entry && entry.root.visible;
+  });
+
+  const intersections = raycaster.intersectObjects(visibleTargets, false);
 
   if (intersections.length > 0) {
     selectDistrictById(intersections[0].object.userData.districtId);
@@ -497,10 +541,12 @@ function resetCamera() {
 
 function onResize() {
   camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
 }
 
 renderer.domElement.addEventListener("pointermove", handlePointerMove);
+renderer.domElement.addEventListener("pointerdown", handlePointerDown);
 renderer.domElement.addEventListener("pointerup", handlePointerUp);
 
 filtersEl.addEventListener("click", (event) => {
@@ -531,13 +577,14 @@ applyFilter("all");
 
 function animate() {
   const elapsed = clock.getElapsedTime();
+  const delta = clock.getDelta();
 
   districtEntries.forEach((entry, index) => {
     entry.tower.position.y = entry.baseHeight / 2 + Math.sin(elapsed * 1.8 + index) * 0.18;
     entry.cap.position.y = entry.baseHeight + 0.32 + Math.sin(elapsed * 1.8 + index) * 0.18;
     const haloScale = 0.92 + (Math.sin(elapsed * 2.4 + index * 0.6) + 1) * 0.08;
     entry.halo.scale.setScalar(haloScale);
-    entry.root.rotation.y += elapsed * 0.0008 * entry.spinFactor;
+    entry.root.rotation.y += delta * 0.4 * entry.spinFactor;
   });
 
   droneGroup.children.forEach((drone) => {
