@@ -303,6 +303,8 @@ let activeFilter = "all";
 let selectedDistrict = districts[0];
 let hoveredDistrict = null;
 let autoRotate = true;
+let isDragging = false;
+let dragStartPosition = { x: 0, y: 0 };
 
 function getFilteredDistricts() {
   return activeFilter === "all"
@@ -432,6 +434,15 @@ function applyFilter(nextFilter) {
     entry.root.visible = visible;
   });
 
+  if (selectedDistrict) {
+    const filteredDistricts = getFilteredDistricts();
+    const isSelectedVisible = filteredDistricts.some((d) => d.id === selectedDistrict.id);
+    if (!isSelectedVisible) {
+      selectedDistrict = filteredDistricts[0] || null;
+      renderDetails();
+    }
+  }
+
   renderMetrics();
   renderEvents();
   refreshSelectionVisuals();
@@ -474,7 +485,25 @@ function handlePointerMove(event) {
   tooltipEl.classList.remove("visible");
 }
 
+function handlePointerDown(event) {
+  isDragging = false;
+  dragStartPosition = { x: event.clientX, y: event.clientY };
+}
+
+function handlePointerMoveWithDragCheck(event) {
+  const dx = event.clientX - dragStartPosition.x;
+  const dy = event.clientY - dragStartPosition.y;
+  if (Math.sqrt(dx * dx + dy * dy) > 5) {
+    isDragging = true;
+  }
+  handlePointerMove(event);
+}
+
 function handlePointerUp(event) {
+  if (isDragging) {
+    return;
+  }
+
   updatePointerFromEvent(event);
   raycaster.setFromCamera(pointer, camera);
 
@@ -497,10 +526,12 @@ function resetCamera() {
 
 function onResize() {
   camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
 }
 
-renderer.domElement.addEventListener("pointermove", handlePointerMove);
+renderer.domElement.addEventListener("pointerdown", handlePointerDown);
+renderer.domElement.addEventListener("pointermove", handlePointerMoveWithDragCheck);
 renderer.domElement.addEventListener("pointerup", handlePointerUp);
 
 filtersEl.addEventListener("click", (event) => {
@@ -537,7 +568,7 @@ function animate() {
     entry.cap.position.y = entry.baseHeight + 0.32 + Math.sin(elapsed * 1.8 + index) * 0.18;
     const haloScale = 0.92 + (Math.sin(elapsed * 2.4 + index * 0.6) + 1) * 0.08;
     entry.halo.scale.setScalar(haloScale);
-    entry.root.rotation.y += elapsed * 0.0008 * entry.spinFactor;
+    entry.root.rotation.y = elapsed * 0.08 * entry.spinFactor;
   });
 
   droneGroup.children.forEach((drone) => {
